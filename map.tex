@@ -1,0 +1,292 @@
+\documentclass{article}
+\usepackage{typearea}  % package “geometry” can’t change paper mid-document
+\usepackage{fontspec}
+\usepackage{graphicx}
+\usepackage{verbatim}  % for \begin{comment}
+\usepackage{tikz}
+\usepackage{expl3}
+
+\usetikzlibrary{calc}
+\usetikzlibrary{shapes.geometric}
+
+\pagestyle{empty}  % no page numbers please
+\setmainfont{Charis SIL}
+\newfontfamily\symbolfont{Dyuthi}
+
+\KOMAoptions{paper=a0,paper=landscape}
+\recalctypearea
+
+\begin{document}
+
+\ExplSyntaxOn
+\dim_new:N \gDinAZeroLongDim
+\dim_new:N \gDinAZeroShortDim
+\dim_gset_eq:NN \gDinAZeroLongDim \pdfpagewidth
+\dim_gset_eq:NN \gDinAZeroShortDim \pdfpageheight
+\ExplSyntaxOff
+
+\newcommand{\symbolfontsettings}{\symbolfont}
+
+{
+    \newlength{\symbolminwidth}
+    \symbolfontsettings
+    \pgfmathsetlength{\global\symbolminwidth}{width("BB")}
+}
+
+\tikzset{
+    every picture/.style={
+        outer sep=auto,
+    },
+    all symbols/.style={
+        draw,thick,minimum width=\symbolminwidth,inner sep=0.4mm,
+        font=\symbolfontsettings,
+    },
+    every label/.style={font=\tiny,label position=below,inner sep=0},
+    health node and label/.style={color=red!75!black,},
+    stamina node and label/.style={color=blue!75!black,},
+    deadeye node and label/.style={color=green!50!black,},
+    health init/.style={
+        circle,
+    },
+    stamina init/.style={
+        rectangle,
+    },
+    deadeye init/.style={
+        isosceles triangle,
+        isosceles triangle apex angle=60,
+        shape border rotate=90,
+    },
+    triangle symbol/.pic={
+        { [thick]
+            \draw[thick] (90:2.5mm) -- (210:2.5mm) -- node[below,font=\tiny] {label} (330:2.5mm) -- cycle;
+            \node[font=\symbolfontsettings] {G};
+        }
+    },
+    circle symbol/.pic={
+        \draw[thick] (0,0) circle [radius=2.5mm];
+        \node[below,font=\tiny] at (0,-2.5mm) {label2};
+        \node[font=\symbolfontsettings] {Y};
+    }
+}
+
+% defines the final styles as a combination of (e.g. for health)
+% - all symbols (style)
+% - health init (style)
+% - health node and label (style)
+% and the health symbol labels will draw from
+% - every label (standard style)
+% - health node and label (locally appended by us to every label style)
+\ExplSyntaxOn
+\clist_map_inline:nn {health, stamina, deadeye} {
+    \tikzset{
+        #1/.estyle={
+            all~symbols,
+            #1~init,
+            #1~node~and~label,
+            prefix~after~command={\noexpand\pgfextra{\noexpand\tikzset{
+                every~label/.append~style={
+                    #1~node~and~label,
+                },
+            }}},
+        },
+    }
+}
+
+\cs_new_protected:Nn \generateSymbolMacro:Nnnnn {   % \ginsengAlaskan {health} {G} {ginsengAlaskan} {alaskan}
+    \cs_new_protected:Npn #1 ##1 {  % generated command takes a coordinate list
+        \tikzset{
+                this/.style=#2,
+        }
+        \tl_if_eq:nnF {#4} {#5} {  % the caller uses \foreach and will feed #4==#5 if there is no label
+            \tikzset{
+                this/.append~style={label={#5}},
+            }
+        }
+        \node foreach \pos in {##1}
+            [this,at=\pos] {#3};
+    }
+}
+
+\cs_generate_variant:Nn \generateSymbolMacro:Nnnnn { coooo }
+
+\foreach \siemer_style / \siemer_symbolLetter / \siemer_command / \siemer_label in {
+    health/G/ginseng,
+    health/G/ginsengAlaskan/alaskan,
+    health/G/ginsengAmerican/american,
+    health/Y/yarrow,
+    health/E/englishMace,
+    health/M/milkWeed,
+    stamina/B/burdockRoot,
+    stamina/S/sage,
+    stamina/S/sageDesert/desert,
+    stamina/S/sageHummingbird/hummingbird,
+    stamina/S/sageRed/red,
+    stamina/V/violetSnowdrop,
+    stamina/W/wildFeverfew,
+    deadeye/I/indianTobacco,
+    deadeye/C/currant,
+    deadeye/C/currantBlack/black,
+    deadeye/C/currantGolden/golden,
+    deadeye/P/prairiePoppy
+} {
+    \exp_args:No \generateSymbolMacro:coooo 
+        \siemer_command \siemer_style \siemer_symbolLetter \siemer_command \siemer_label
+}
+
+% How to replace the background bitmap map?
+% 1. compile the original with the grid enabled and the full map on some A0 page in the document
+% 2. check where the grid’s origin (coordinate (0,0)) and Annesburg’s train station dot (around (90,50.1)) are
+% 3. replace the image, set originShift to (0,0) and fullMapScale to 1
+% 4. if the image is satisfactory positioned in A0, note the coordinate of what the origin should be
+% 5. set the originShift to noted coordinate and check the result
+% 6. fiddle with fullMapScale; use values around 1, until Annesburg’s train station is on (90,y) → (90,50.1)
+
+\tl_new:N \fullMapScale
+\tl_new:N \originShift
+\tl_new:N \originCorrection
+\tl_gset:Nn \originShift {(10.0,12.5)}  % where the New Austin border hits the water
+\tl_gset:Nn \fullMapScale {0.9969}   % (90,y) should go through the train station dot in Annesburg ~(90,50.1)
+\tl_gset:Nx \originCorrection {($-1*\originShift$)}  % for use in crop pages
+
+\ExplSyntaxOff
+\newsavebox\fullmap
+\sbox\fullmap{  % this comment or expl3 syntax is required to keep this picture savebox snug
+    \begin{tikzpicture}
+        \begin{scope}  % no `overlay`; this bitmap should provide the bounding box of this savebox
+            \node[above right,inner sep=0] {
+                \includegraphics[
+                    width=\gDinAZeroLongDim,
+                    totalheight=\gDinAZeroShortDim,
+                    keepaspectratio,
+                ] {rdr2/Red-Dead-Redemption-2-Full-World-Map.jpg}
+            };
+        \end{scope}
+        \begin{scope}[
+                overlay,  % the background map bitmap provides the bounding box—the rest should not
+                shift={\originShift},
+                scale=\fullMapScale,
+                ]
+            \draw[help lines] (-10,-20) grid (120,100);
+            \node foreach \x in {-10,-5,...,120} foreach \y in {-20,-15,...,100}
+                [node font=\fontsize{4}{5}\selectfont,above right]
+                at (\x,\y) {\x,\y};
+
+
+            \pic {triangle symbol};
+            \pic at (1,1) {circle symbol};
+            \ginseng{(14,8)}
+
+            \ginsengAlaskan{
+                (15,8), (16,8)
+            }
+
+            \yarrow{(8,8), (9,9)}
+
+            \indianTobacco{(10,8), (10, 9)}
+
+            \currantBlack{
+                (10,8)
+            }
+
+            % New Austin
+                % Gaptooth Ridge
+                    \currantBlack{
+                        (10,8)
+                    }
+                    \sageDesert {
+                        (8,8), (9,9)
+                    }
+                % Cholla Springs
+                    \wildFeverfew{
+                        (14,14)
+                    }
+                    \sageRed{
+                        (16,16)
+                    }
+                    \currant{
+                        (18,16)
+                    }
+                % Rio Bravo
+                    \englishMace {
+                        (8,20)
+                    }
+                % Hennigan’s Stead
+            % West Elizabeth
+                % Tall Trees
+                % Great Plains
+                % Big Valley
+            % Ambarino
+                % Grizzlies West
+                % Grizzlies East
+            % New Hanover
+                % The Heartlands
+                % Cumberland Forest
+                % Roanoke Ridge
+            % Lemoyne
+                % Scarlett Meadows
+                % Bluewater Marsh
+                % Bayou Nwa
+        \end{scope}
+    \end{tikzpicture}  % this comment or expl3 syntax is required to keep this picture savebox snug
+}
+\ExplSyntaxOn
+
+\tl_new:N \l_pictureShift_tl
+\cs_new_protected:Nn \cropPage:nnnn { 
+    % {A4}, {landscape}, {(20,10)}, {1}
+    % zoom factor
+    \KOMAoptions{paper=#1, paper=#2}
+    \recalctypearea
+
+    \tl_set:Nx \l_pictureShift_tl {($-\fullMapScale*#3$)}
+    \begin{tikzpicture}[
+            remember~picture,
+            overlay,
+            shift=(current~page.south~west)
+            ]
+        \node[
+                above~right,
+                inner~sep=0,
+                scale=\tl_if_empty:nTF {#4} {1} {#4},
+                shift=\tl_if_empty:nTF {#3} {(0,0)} {\originCorrection},
+                shift=\tl_if_empty:nTF {#3} {(0,0)} {\l_pictureShift_tl},
+                ] {\usebox\fullmap};
+    \end{tikzpicture}
+}
+
+\seq_new:N \l_countyData_seq
+\seq_set_split:Nnn \l_countyData_seq {;} {
+    p/(-3.5,-5);  % Gaptooth Ridge
+    l/(10.7,2.2);  % Cholla Springs
+    l/(6,-5);  % Rio Bravo
+    l/(27.8,3.8);  % Hennigan’s Stead
+    l/(33.1,15.8);  % Tall Trees and Great Plains
+    l/(32.7,32.3);  % Big Valley (south part on Tall Trees and Great Plains)
+    p/(40.3,43.8);  % Grizzlies West (eastern part on Grizzlies East, southern tip on Big Valley)
+    l/(57.1,44);  % Cumberland Forest and Grizzlies East
+    l/(55,30);  % The Heartlands (north east tip on xxx; east tips on Big Valley)
+    p/(76.5,36.5);  % Roanoke Ridge (south tip on Bluewater Marsh)
+    p/(63.7,14.5);  % Scarlett Meadows
+    p/(73.5,17.5);  % Bayou Nwa and Bluewater Marsh  # add (2,0) for more Sisika
+}
+
+\cs_generate_variant:Nn \cropPage:nnnn { nffn }
+\seq_new:N \l_orientationPosition_seq
+\cs_new_protected:Nn \cropPages:Nnn {  % \l_countyData_seq {a4} {1.2}
+    \seq_remove_all:Nn #1 {}  % “support” trailing delimiter on input seq
+    \seq_map_inline:Nn #1 {
+        \seq_set_split:Nnn \l_orientationPosition_seq {/} {##1}
+        \cropPage:nffn
+            {#2}
+            {\str_if_eq_x:nnTF {\seq_item:Nn \l_orientationPosition_seq {1}} {l} {landscape} {portrait}}
+            {\seq_item:Nn \l_orientationPosition_seq {2}}
+            {#3}
+    }
+}
+
+\cropPage:nnnn {a0} {landscape} {} {}  % with empty arguments it is actually the full map
+\cropPages:Nnn \l_countyData_seq {a4} {1.2}
+\cropPage:nnnn {a4} {landscape} {(-1,-5)} {.575}  % New Austin
+\cropPage:nnnn {a4} {landscape} {(31,15.5)} {.45}  % West Elizabeth, Ambarino, New Hanover Lemoyne
+
+\end{document}
